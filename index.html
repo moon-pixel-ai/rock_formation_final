@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>마그마 마스터: 행성 탈출</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @font-face {
+            font-family: 'Pretendard-Regular';
+            src: url('https://fastly.jsdelivr.net/gh/Project-Noonnu/noonfonts_2107@1.1/Pretendard-Regular.woff') format('woff');
+            font-weight: 400;
+            font-style: normal;
+        }
+        body { font-family: 'Pretendard-Regular', sans-serif; -webkit-tap-highlight-color: transparent; }
+        canvas {
+            image-rendering: pixelated;
+            display: block;
+            margin: 0 auto;
+            background: #0a0a0a;
+            max-width: 100%;
+            height: auto;
+        }
+        @keyframes flash {
+            0% { background-color: rgba(255, 0, 0, 0.4); }
+            100% { background-color: transparent; }
+        }
+        .death-flash { animation: flash 0.5s ease-out; }
+        
+        .mission-box {
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #eab308;
+            box-shadow: 0 0 15px rgba(234, 179, 8, 0.3);
+        }
+        
+        .top-guide-panel {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #334155;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-backdrop {
+            background: rgba(0, 0, 0, 0.95);
+        }
+        
+        button:active {
+            transform: scale(0.95);
+            filter: brightness(1.1);
+        }
+        
+        .step-badge {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 2px;
+        }
+
+        .cooldown-bar {
+            transition: width 0.1s linear;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex flex-col items-center p-4 overflow-x-hidden">
+
+    <!-- Top Info Bar -->
+    <div class="w-full max-w-[850px] flex flex-col md:flex-row gap-3 mb-4">
+        <div class="mission-box p-3 rounded-xl flex-1 flex flex-col items-center justify-center min-w-[200px]">
+            <h1 class="text-xs font-bold text-yellow-500 uppercase tracking-widest mb-1">Mission Protocol</h1>
+            <div id="current-mission-ui" class="text-xl font-black text-white text-center">모드를 선택해주세요</div>
+            <div class="flex gap-2 mt-2" id="collection-dots"></div>
+        </div>
+
+        <!-- 가이드 패널: 이전의 단계별 로직으로 복구 -->
+        <div class="top-guide-panel p-3 rounded-xl flex-[2] flex flex-wrap gap-4 items-center justify-around border-l-4 border-l-blue-500">
+            <div class="flex flex-col">
+                <span class="step-badge bg-blue-900 text-blue-300">1단계 채굴</span>
+                <p class="text-[11px] text-gray-300">광물 9개를 캐세요 (Space)</p>
+            </div>
+            <div class="flex flex-col border-l border-gray-700 pl-4">
+                <span class="step-badge bg-red-900 text-red-300">2단계 가열</span>
+                <p class="text-[11px] text-gray-300">30m 지점 가열기 방문</p>
+            </div>
+            <div class="flex flex-col border-l border-gray-700 pl-4">
+                <span class="step-badge bg-purple-900 text-purple-300">3단계 냉각</span>
+                <p class="text-[11px] text-gray-300">지표면/심해에서 냉각</p>
+            </div>
+            <div class="flex flex-col border-l border-gray-700 pl-4">
+                <span class="step-badge bg-gray-700 text-gray-300">조작키</span>
+                <p class="text-[11px] text-gray-400">이동: 방향키 / 스킬: Shift</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Viewport -->
+    <div id="game-container" class="relative">
+        <div class="relative">
+            <canvas id="gameCanvas" width="600" height="600" class="border-4 border-gray-800 rounded-lg shadow-2xl"></canvas>
+            
+            <!-- HUD -->
+            <div id="ui-overlay" class="absolute top-4 left-4 right-4 flex justify-between pointer-events-none">
+                <div class="bg-black bg-opacity-70 p-3 rounded-lg border border-gray-600 text-sm">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-3 h-3 bg-gray-200 rounded-sm"></div>
+                        <span id="light-count">0</span>
+                    </div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="w-3 h-3 bg-gray-700 rounded-sm"></div>
+                        <span id="dark-count">0</span>
+                    </div>
+                    <div class="text-[10px] text-gray-400 font-bold uppercase">Total: <span id="total-count">0</span> / 9</div>
+                </div>
+
+                <!-- Skill HUD -->
+                <div class="flex flex-col gap-2 items-end">
+                    <div id="mode-indicator" class="bg-black bg-opacity-70 p-2 rounded border border-gray-600 text-[10px] font-bold h-fit"></div>
+                    <div class="bg-black bg-opacity-80 p-2 rounded-lg border border-orange-500 w-32">
+                        <div class="flex justify-between text-[9px] mb-1">
+                            <span class="text-orange-400 font-bold">ROCKET</span>
+                            <span id="skill-status" class="text-white">READY</span>
+                        </div>
+                        <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                            <div id="skill-bar" class="cooldown-bar h-full bg-orange-500 w-full"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Intro Modal -->
+        <div id="intro-modal" class="absolute inset-0 flex items-center justify-center modal-backdrop rounded-lg p-8 z-[200]">
+            <div class="max-w-md w-full bg-gray-900 border-2 border-yellow-500 p-6 rounded-2xl shadow-2xl text-center">
+                <h2 class="text-2xl font-bold text-yellow-400 mb-4">🚀 지질 조사 시작</h2>
+                <div class="space-y-4 mb-6">
+                    <button onclick="startGame('easy')" class="w-full bg-green-700 hover:bg-green-600 text-white p-4 rounded-xl transition-all border-b-4 border-green-900">
+                        <span class="text-lg font-bold">EASY MODE</span>
+                    </button>
+                    <button onclick="startGame('hard')" class="w-full bg-red-700 hover:bg-red-600 text-white p-4 rounded-xl transition-all border-b-4 border-red-900">
+                        <span class="text-lg font-bold">HARD MODE</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Result Modal -->
+        <div id="result-modal" class="hidden absolute inset-0 flex items-center justify-center bg-black bg-opacity-95 rounded-lg p-8 text-center z-50">
+            <div class="max-w-xs">
+                <h2 id="result-title" class="text-2xl font-bold mb-3 text-yellow-400"></h2>
+                <p id="result-desc" class="mb-6 text-gray-200 text-sm"></p>
+                <button id="modal-close-btn" onclick="closeModal()" class="bg-yellow-600 text-white font-bold py-3 px-8 rounded-full">확인 (Enter)</button>
+            </div>
+        </div>
+
+        <!-- Ending Scene -->
+        <div id="ending-layer" class="hidden absolute inset-0 bg-blue-900 bg-opacity-40 flex flex-col items-center justify-center z-[100]">
+            <div id="rocket" class="relative transition-all duration-[3000ms] ease-in">
+                <div class="w-16 h-32 bg-gray-300 rounded-t-full border-x-4 border-gray-400 relative">
+                   <div class="absolute top-8 left-4 w-4 h-4 bg-blue-400 rounded-full border-2 border-blue-600"></div>
+                   <div class="absolute -bottom-10 left-1/2 -translate-x-1/2 w-12 h-16 bg-orange-500 rounded-full blur-sm animate-bounce"></div>
+                </div>
+            </div>
+            <h1 class="text-4xl font-black text-white mt-12">MISSION COMPLETE</h1>
+            <button onclick="location.reload()" class="mt-8 bg-white text-blue-900 font-bold py-2 px-6 rounded-lg">다시 시작</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const lightDisplay = document.getElementById('light-count');
+        const darkDisplay = document.getElementById('dark-count');
+        const totalDisplay = document.getElementById('total-count');
+        const currentMissionUI = document.getElementById('current-mission-ui');
+        const collectionDots = document.getElementById('collection-dots');
+        const introModal = document.getElementById('intro-modal');
+        const resultModal = document.getElementById('result-modal');
+        const resultTitle = document.getElementById('result-title');
+        const resultDesc = document.getElementById('result-desc');
+        const gameContainer = document.getElementById('game-container');
+        const endingLayer = document.getElementById('ending-layer');
+        const rocket = document.getElementById('rocket');
+        const modeIndicator = document.getElementById('mode-indicator');
+        const skillBar = document.getElementById('skill-bar');
+        const skillStatus = document.getElementById('skill-status');
+
+        const TILE_SIZE = 40;
+        const ROWS = 80; 
+        const COLS = 15; 
+        const VIEW_HEIGHT = 15;
+        
+        // --- 조작감 세팅 (이전 요청사항 유지) ---
+        const ACCEL = 0.35;    
+        const FRICTION = 0.75; 
+        const GRAVITY = 0.25;
+        const LIFT = 0.55;     
+        // -------------------------
+
+        const MAX_SPEED = 5;
+        const MAX_INVENTORY = 9;
+
+        const TILE = { AIR: 0, DIRT: 1, LIGHT_ORE: 2, DARK_ORE: 3, HEATER: 4, COOLER_SURFACE: 5, COOLER_DEEP: 6 };
+        
+        let skill = {
+            isActive: false,
+            lastUsed: -30000,
+            duration: 1000, 
+            cooldown: 30000 
+        };
+
+        let player = { x: (COLS / 2) * TILE_SIZE, y: 2 * TILE_SIZE, width: 32, height: 32, vx: 0, vy: 0, inventory: { light: 0, dark: 0 }, magma: null };
+        let map = [];
+        let enemies = [];
+        let keys = {};
+        let scrollY = 0;
+        let isEnding = false;
+        let isPaused = true;
+        let frameCount = 0;
+        let gameMode = 'easy';
+
+        const ALL_ROCKS = ["현무암", "유문암", "반려암", "화강암"];
+        let pendingMissions = [...ALL_ROCKS].sort(() => Math.random() - 0.5);
+        let collectedRocks = [];
+        let currentMission = pendingMissions[0];
+
+        function updateMissionUI() {
+            if (!currentMission) {
+                currentMissionUI.innerText = "미션 클리어!";
+                return;
+            }
+            currentMissionUI.innerText = `${currentMission} 제작`;
+            collectionDots.innerHTML = ALL_ROCKS.map(r => 
+                `<div class="w-3 h-3 rounded-full ${collectedRocks.includes(r) ? 'bg-yellow-400' : 'bg-gray-700'} border border-gray-500 shadow-sm"></div>`
+            ).join('');
+        }
+
+        function initMap() {
+            map = [];
+            enemies = [];
+            for (let y = 0; y < ROWS; y++) {
+                map[y] = [];
+                for (let x = 0; x < COLS; x++) {
+                    if (y < 6) {
+                        map[y][x] = TILE.AIR;
+                        if (y === 5 && x === 2) map[y][x] = TILE.COOLER_SURFACE;
+                    } 
+                    else if (y === 30 && x >= 6 && x <= 8) map[y][x] = TILE.HEATER;
+                    else if (y === 75 && x === 12) map[y][x] = TILE.COOLER_DEEP;
+                    else {
+                        let rand = Math.random();
+                        if (rand < 0.08) map[y][x] = TILE.LIGHT_ORE;
+                        else if (rand < 0.15) map[y][x] = TILE.DARK_ORE;
+                        else map[y][x] = TILE.DIRT;
+                    }
+                }
+            }
+            for (let i = 0; i < 15; i++) {
+                enemies.push({ 
+                    x: Math.random() * (COLS - 1) * TILE_SIZE, 
+                    y: (12 + Math.random() * (ROWS - 20)) * TILE_SIZE, 
+                    vx: (Math.random() - 0.5) * 2, 
+                    vy: (Math.random() - 0.5) * 2, 
+                    size: 30,
+                    isHunter: false
+                });
+            }
+            updateMissionUI();
+        }
+
+        function startGame(mode) {
+            gameMode = mode;
+            modeIndicator.innerText = mode === 'easy' ? 'MODE: EASY' : 'MODE: HARD';
+            modeIndicator.className = mode === 'easy' ? 'bg-green-900 bg-opacity-70 p-2 rounded border border-green-600 text-[10px] font-bold text-green-300' : 'bg-red-900 bg-opacity-70 p-2 rounded border border-red-600 text-[10px] font-bold text-red-300';
+            introModal.classList.add('hidden');
+            isPaused = false;
+        }
+
+        function respawn() {
+            if (skill.isActive) return;
+            player.x = (COLS / 2) * TILE_SIZE;
+            player.y = 2 * TILE_SIZE;
+            player.vx = 0; player.vy = 0;
+            player.inventory.light = 0; player.inventory.dark = 0;
+            player.magma = null;
+            gameContainer.classList.add('death-flash');
+            setTimeout(() => gameContainer.classList.remove('death-flash'), 500);
+        }
+
+        function updateSkill() {
+            const now = Date.now();
+            const timeSinceLast = now - skill.lastUsed;
+
+            if (skill.isActive) {
+                const timeLeft = skill.duration - timeSinceLast;
+                if (timeLeft <= 0) {
+                    skill.isActive = false;
+                    skillStatus.innerText = "COOLDOWN";
+                    skillBar.classList.replace('bg-orange-400', 'bg-gray-600');
+                } else {
+                    const percent = (timeLeft / skill.duration) * 100;
+                    skillBar.style.width = percent + "%";
+                    player.vy = -4.5; 
+                    destroyAbove();
+                }
+            } else {
+                const cooldownLeft = skill.cooldown - timeSinceLast;
+                if (cooldownLeft <= 0) {
+                    skillStatus.innerText = "READY";
+                    skillStatus.className = "text-white animate-pulse";
+                    skillBar.classList.replace('bg-gray-600', 'bg-orange-500');
+                    skillBar.style.width = "100%";
+                } else {
+                    const percent = ((skill.cooldown - cooldownLeft) / skill.cooldown) * 100;
+                    skillBar.style.width = percent + "%";
+                    skillStatus.innerText = Math.ceil(cooldownLeft / 1000) + "s";
+                    skillStatus.className = "text-gray-400";
+                }
+            }
+        }
+
+        function destroyAbove() {
+            const checkPoints = [
+                {x: player.x + 5, y: player.y - 5},
+                {x: player.x + player.width - 5, y: player.y - 5}
+            ];
+            
+            checkPoints.forEach(p => {
+                const tx = Math.floor(p.x / TILE_SIZE);
+                const ty = Math.floor(p.y / TILE_SIZE);
+                if (ty >= 0 && ty < ROWS && tx >= 0 && tx < COLS) {
+                    const tile = map[ty][tx];
+                    if (tile === TILE.DIRT || tile === TILE.LIGHT_ORE || tile === TILE.DARK_ORE) {
+                        map[ty][tx] = TILE.AIR;
+                    }
+                }
+            });
+        }
+
+        function useSkill() {
+            if (isPaused || isEnding || skill.isActive) return;
+            const now = Date.now();
+            if (now - skill.lastUsed >= skill.cooldown) {
+                skill.isActive = true;
+                skill.lastUsed = now;
+                skillStatus.innerText = "ON";
+                skillBar.classList.replace('bg-orange-500', 'bg-orange-400');
+            }
+        }
+
+        function updateEnemies() {
+            if (isPaused) return;
+            enemies.forEach(en => {
+                if (en.isHunter) {
+                    const dx = player.x - en.x;
+                    const dy = player.y - en.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist > 0) {
+                        en.vx += (dx / dist) * 0.05;
+                        en.vy += (dy / dist) * 0.05;
+                    }
+                    const speed = Math.sqrt(en.vx*en.vx + en.vy*en.vy);
+                    if (speed > 2.5) {
+                        en.vx = (en.vx / speed) * 2.5;
+                        en.vy = (en.vy / speed) * 2.5;
+                    }
+                }
+                en.x += en.vx; 
+                en.y += en.vy;
+                if (en.x < 0 || en.x > canvas.width - en.size) en.vx *= -1;
+                if (en.y < 8 * TILE_SIZE || en.y > (ROWS - 2) * TILE_SIZE) en.vy *= -1;
+                const distToPlayer = Math.sqrt(Math.pow(player.x - en.x, 2) + Math.pow(player.y - en.y, 2));
+                if (distToPlayer < 25) respawn();
+            });
+        }
+
+        function drawEnemies() {
+            enemies.forEach(en => {
+                const screenY = en.y - scrollY;
+                if (screenY < -TILE_SIZE || screenY > canvas.height + TILE_SIZE) return;
+                ctx.fillStyle = en.isHunter ? '#ef4444' : '#4ade80';
+                ctx.beginPath();
+                ctx.ellipse(en.x + (en.size/2), screenY + (en.size/2), en.size * 0.6, en.size * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = en.isHunter ? 'white' : 'black';
+                const eyeX = (en.vx > 0) ? en.x + (en.size * 0.7) : en.x + (en.size * 0.2);
+                ctx.fillRect(eyeX, screenY + (en.size * 0.3), 6, 6);
+            });
+        }
+
+        function drawPlayer() {
+            const screenY = player.y - scrollY;
+            
+            if (skill.isActive) {
+                ctx.fillStyle = '#f87171';
+                const particles = 5;
+                for(let i=0; i<particles; i++) {
+                    ctx.fillRect(player.x + Math.random()*player.width, screenY + player.height + Math.random()*10, 4, 4);
+                }
+            }
+
+            ctx.fillStyle = skill.isActive ? '#ef4444' : (player.magma ? '#f97316' : '#3b82f6');
+            ctx.beginPath();
+            ctx.roundRect(player.x, screenY, player.width, player.height, 8);
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(player.x + 6, screenY + 8, 4, 4);
+            ctx.fillRect(player.x + 22, screenY + 8, 4, 4);
+            
+            if (player.magma) {
+                ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2;
+                ctx.strokeRect(player.x - 2, screenY - 2, player.width + 4, player.height + 4);
+            }
+        }
+
+        function drawMap() {
+            const startRow = Math.floor(scrollY / TILE_SIZE);
+            const endRow = Math.min(startRow + VIEW_HEIGHT + 2, ROWS);
+            for (let y = startRow; y < endRow; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    const tile = map[y][x];
+                    const tx = x * TILE_SIZE; const ty = y * TILE_SIZE - scrollY;
+                    if (tile === TILE.DIRT) { ctx.fillStyle = '#4e342e'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE); }
+                    else if (tile === TILE.LIGHT_ORE) { ctx.fillStyle = '#f3f4f6'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(tx + 20, ty + 20, 6, 0, Math.PI * 2); ctx.fill(); }
+                    else if (tile === TILE.DARK_ORE) { ctx.fillStyle = '#1f2937'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE); ctx.fillStyle = '#4b5563'; ctx.beginPath(); ctx.arc(tx + 20, ty + 20, 6, 0, Math.PI * 2); ctx.fill(); }
+                    else if (tile === TILE.HEATER) { 
+                        ctx.fillStyle = '#991b1b'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE); 
+                        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(tx + 10, ty + 35); ctx.lineTo(tx + 20, ty + 15); ctx.lineTo(tx + 30, ty + 35); ctx.fill();
+                    }
+                    else if (tile === TILE.COOLER_SURFACE || tile === TILE.COOLER_DEEP) { 
+                        ctx.fillStyle = tile === TILE.COOLER_SURFACE ? '#06b6d4' : '#7c3aed'; ctx.fillRect(tx, ty, TILE_SIZE, TILE_SIZE); 
+                    }
+                }
+            }
+        }
+
+        function update() {
+            if (isPaused || !resultModal.classList.contains('hidden') || isEnding) return;
+            frameCount++;
+            updateSkill();
+
+            if (keys['ArrowLeft']) player.vx -= ACCEL; 
+            else if (keys['ArrowRight']) player.vx += ACCEL; 
+            else player.vx *= FRICTION;
+            
+            if (!skill.isActive) {
+                player.vy += GRAVITY; if (keys['ArrowUp']) player.vy -= LIFT;
+            }
+
+            player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
+            player.vy = Math.max(-MAX_SPEED * 2, Math.min(MAX_SPEED * 2, player.vy));
+            
+            let nextX = player.x + player.vx;
+            if (nextX < 0) nextX = 0; if (nextX + player.width > canvas.width) nextX = canvas.width - player.width;
+            if (!checkCollision(nextX, player.y)) player.x = nextX; else player.vx = 0;
+            
+            let nextY = player.y + player.vy;
+            if (nextY < 0) nextY = 0;
+            if (nextY > (ROWS - 1) * TILE_SIZE) { respawn(); return; }
+            if (!checkCollision(player.x, nextY)) player.y = nextY; else player.vy = 0;
+            
+            updateEnemies();
+            const targetScroll = player.y - canvas.height / 2;
+            scrollY += (targetScroll - scrollY) * 0.1;
+            scrollY = Math.max(0, Math.min(scrollY, ROWS * TILE_SIZE - canvas.height));
+            lightDisplay.innerText = player.inventory.light;
+            darkDisplay.innerText = player.inventory.dark;
+            totalDisplay.innerText = player.inventory.light + player.inventory.dark;
+        }
+
+        function checkCollision(x, y) {
+            if (skill.isActive) return false;
+            const points = [{x: x + 2, y: y + 2}, {x: x + player.width - 2, y: y + 2}, {x: x + 2, y: y + player.height - 2}, {x: x + player.width - 2, y: y + player.height - 2}];
+            for (let p of points) {
+                const tx = Math.floor(p.x / TILE_SIZE); const ty = Math.floor(p.y / TILE_SIZE);
+                if (ty >= 0 && ty < ROWS && tx >= 0 && tx < COLS) {
+                    const tile = map[ty][tx];
+                    if (tile !== TILE.AIR && tile !== TILE.HEATER && tile !== TILE.COOLER_SURFACE && tile !== TILE.COOLER_DEEP) return true;
+                }
+            }
+            return false;
+        }
+
+        function handleInteraction() {
+            if (isPaused || skill.isActive) return;
+            const centerX = player.x + player.width / 2;
+            const centerY = player.y + player.height / 2;
+            let targetX = centerX; let targetY = centerY;
+            if (keys['ArrowUp']) return; 
+            if (keys['ArrowDown']) targetY += TILE_SIZE; 
+            else if (keys['ArrowLeft']) targetX -= TILE_SIZE; 
+            else if (keys['ArrowRight']) targetX += TILE_SIZE;
+            const tx = Math.floor(targetX / TILE_SIZE); const ty = Math.floor(targetY / TILE_SIZE);
+            if (ty >= 0 && ty < ROWS && tx >= 0 && tx < COLS) {
+                const tile = map[ty][tx];
+                if (tile === TILE.DIRT || tile === TILE.LIGHT_ORE || tile === TILE.DARK_ORE) {
+                    if (tile === TILE.DIRT) { map[ty][tx] = TILE.AIR; return; }
+                    if (player.inventory.light + player.inventory.dark >= MAX_INVENTORY) {
+                        showModal("인벤토리 가득 참", "광물을 더 이상 캘 수 없습니다.");
+                        return;
+                    }
+                    if (tile === TILE.LIGHT_ORE) player.inventory.light++; 
+                    if (tile === TILE.DARK_ORE) player.inventory.dark++;
+                    map[ty][tx] = TILE.AIR; 
+                    return;
+                }
+                if (tile === TILE.HEATER && !player.magma) {
+                    if (player.inventory.light + player.inventory.dark === MAX_INVENTORY) {
+                        player.magma = (player.inventory.light > player.inventory.dark) ? 'light' : 'dark';
+                        player.inventory.light = 0; player.inventory.dark = 0;
+                        showModal("마그마 추출", `${player.magma === 'light' ? '유색' : '무색' } 마그마가 생성되었습니다.`);
+                    } else { showModal("광물 부족", `광물 9개가 필요합니다.`); }
+                    return;
+                }
+                if (player.magma) {
+                    if (tile === TILE.COOLER_SURFACE) checkMissionResult("화산암");
+                    if (tile === TILE.COOLER_DEEP) checkMissionResult("심성암");
+                }
+            }
+        }
+
+        function checkMissionResult(category) {
+            let resultRock = "";
+            if (player.magma === 'dark') { resultRock = (category === "심성암") ? "반려암" : "현무암"; } 
+            else { resultRock = (category === "심성암") ? "화강암" : "유문암"; }
+            if (resultRock === currentMission) {
+                collectedRocks.push(resultRock); 
+                pendingMissions.shift();
+                if (gameMode === 'hard') {
+                    const normalEnemies = enemies.filter(en => !en.isHunter);
+                    if (normalEnemies.length > 0) {
+                        const target = normalEnemies[Math.floor(Math.random() * normalEnemies.length)];
+                        target.isHunter = true;
+                    }
+                }
+                if (pendingMissions.length > 0) {
+                    currentMission = pendingMissions[0];
+                    showModal("성공", `${resultRock} 생성 완료.`);
+                } else { 
+                    currentMission = null; 
+                    startEnding(); 
+                }
+            } else { 
+                showModal("실패", `목표는 ${currentMission}이지만, ${resultRock}이(가) 나왔습니다.`); 
+            }
+            player.magma = null; 
+            updateMissionUI();
+        }
+
+        function startEnding() { isEnding = true; endingLayer.classList.remove('hidden'); setTimeout(() => { rocket.style.transform = "translateY(-1000px)"; }, 500); }
+        function showModal(title, desc) { resultTitle.innerText = title; resultDesc.innerText = desc; resultModal.classList.remove('hidden'); keys = {}; }
+        function closeModal() { resultModal.classList.add('hidden'); }
+        
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const skyHeight = 6 * TILE_SIZE - scrollY;
+            if (skyHeight > 0) { ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, canvas.width, skyHeight); }
+            drawMap(); drawEnemies(); drawPlayer(); update();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        window.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !resultModal.classList.contains('hidden')) { closeModal(); return; }
+            if (!resultModal.classList.contains('hidden') || isEnding || isPaused) return;
+            if (e.key === ' ') { handleInteraction(); e.preventDefault(); }
+            if (e.key === 'Shift') { useSkill(); e.preventDefault(); }
+            keys[e.key] = true;
+        });
+        window.addEventListener('keyup', e => keys[e.key] = false);
+        window.onload = () => { initMap(); gameLoop(); };
+    </script>
+</body>
+</html>
